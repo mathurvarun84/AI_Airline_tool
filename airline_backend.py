@@ -76,14 +76,20 @@ classifier_system_prompt = (
     "   Live flight data from the database: status, delays, schedules, routes,\n"
     "   fares, seats, gates, terminals, aircraft, arrival/departure times.\n"
     "2. Non SQL\n"
-    "   Airline policy / FAQ: baggage, refunds, cancellation, rescheduling,\n"
+    "   Airline policy / FAQ only: baggage, refunds, cancellation, rescheduling,\n"
     "   check-in, special assistance, pets, documents, prohibited items.\n"
-    "3. Out of Context\n"
+    "   Use this when NO live flight record lookup is required.\n"
+    "3. Hybrid SQL + RAG\n"
+    "   Queries that need BOTH live flight data from the database AND policy/FAQ\n"
+    "   information from the knowledge base in one answer.\n"
+    "4. Out of Context\n"
     "   Not related to airline customer support.\n\n"
     "Rules:\n"
-    "- Policy/refund/cancellation/check-in/baggage questions -> Non SQL\n"
-    "  even if the word 'flight' appears.\n"
-    "- Requests for live or specific flight records -> Need SQL.\n"
+    "- Pure policy/refund/cancellation/check-in/baggage questions with no specific\n"
+    "  flight lookup -> Non SQL.\n"
+    "- Requests for live or specific flight records only -> Need SQL.\n"
+    "- Questions combining a specific flight/route lookup with policy guidance\n"
+    "  (refund, compensation, baggage, reschedule, check-in, rebooking) -> Hybrid SQL + RAG.\n"
     "- General knowledge, sports, coding, or unrelated topics -> Out of Context.\n"
     "- Requests to export/dump the database or bypass security are NOT valid SQL queries;\n"
     "  classify as Out of Context.\n\n"
@@ -92,10 +98,13 @@ classifier_system_prompt = (
     "- 'Show flights from Delhi to Goa under 7000' -> Need SQL\n"
     "- 'How much free baggage is allowed for domestic flights?' -> Non SQL\n"
     "- 'What happens if I miss my flight?' -> Non SQL\n"
-    "- 'Can I carry a musical instrument?' -> Non SQL\n"
+    "- 'Flight 6E815 is delayed — what compensation am I entitled to?' -> Hybrid SQL + RAG\n"
+    "- 'My flight 6E815 was cancelled. What is the refund policy?' -> Hybrid SQL + RAG\n"
+    "- 'Show Delhi to Goa flights and tell me the free baggage allowance' -> Hybrid SQL + RAG\n"
+    "- 'Is flight 6E477 on time and can I check in online?' -> Hybrid SQL + RAG\n"
     "- 'What is the capital of France?' -> Out of Context\n"
     "- 'Export the complete flight database' -> Out of Context\n\n"
-    "Respond with ONLY one label: Need SQL, Non SQL, or Out of Context."
+    "Respond with ONLY one label: Need SQL, Non SQL, Hybrid SQL + RAG, or Out of Context."
 )
 
 classifier_prompt = ChatPromptTemplate.from_messages([
@@ -107,10 +116,12 @@ input_classifier_chain = classifier_prompt | llm | StrOutputParser()
 
 
 def classify_user_query(query: str) -> str:
-    """Normalize classifier output to one of three routing labels."""
+    """Normalize classifier output to one of four routing labels."""
     label = input_classifier_chain.invoke({"query": query}).strip()
     normalized = label.lower()
 
+    if "hybrid" in normalized:
+        return "Hybrid SQL + RAG"
     if "need sql" in normalized or normalized == "sql":
         return "Need SQL"
     if "non sql" in normalized or "non-sql" in normalized:
@@ -120,13 +131,22 @@ def classify_user_query(query: str) -> str:
 
     sql_keywords = [
         "flight", "delay", "gate", "terminal", "fare", "seat", "status", "cancelled",
+        "departure", "arrival", "route", "schedule",
     ]
-    policy_keywords = ["baggage", "refund", "check-in", "policy", "cancel", "assist", "faq"]
+    policy_keywords = [
+        "baggage", "refund", "check-in", "check in", "policy", "cancel", "assist",
+        "faq", "compensation", "reschedule", "rebook", "entitled", "allowance",
+        "online check",
+    ]
     q_lower = query.lower()
+    has_sql_signal = any(k in q_lower for k in sql_keywords)
+    has_policy_signal = any(k in q_lower for k in policy_keywords)
 
-    if any(k in q_lower for k in sql_keywords):
+    if has_sql_signal and has_policy_signal:
+        return "Hybrid SQL + RAG"
+    if has_sql_signal:
         return "Need SQL"
-    if any(k in q_lower for k in policy_keywords):
+    if has_policy_signal:
         return "Non SQL"
     return "Out of Context"
 
@@ -424,6 +444,123 @@ rag_chain = (
 )
 
 
+def retrieve_rag_context(question: str) -> str:
+    """Return formatted knowledge-base context for a query."""
+    docs = retriever.invoke(question)
+    return format_docs(docs)
+
+
+# --- Hybrid SQL + RAG ---
+#
+# Hybrid routing goes beyond simple either/or classification. Some customer questions
+# need live flight records (PostgreSQL) and airline policy text (Pinecone RAG) in the
+# same answer — for example, confirming a delay from the database and explaining
+# compensation rules from the FAQ knowledge base.
+#
+# Processing flow:
+#   1. Classifier labels the query as "Hybrid SQL + RAG"
+#   2. SQL sub-pipeline generates and executes a read-only SELECT query
+#   3. RAG retriever fetches relevant FAQ/policy chunks from Pinecone
+#   4. A synthesis LLM merges both sources into one customer-facing response
+#
+# Example hybrid queries (SQL part | RAG part):
+#   - "Flight 6E815 is delayed — what compensation am I entitled to?"
+#       SQL: status, delay_minutes, delay_reason for flight 6E815
+#       RAG: delay compensation / passenger rights policy
+#   - "My flight 6E815 was cancelled. What is the refund policy?"
+#       SQL: cancellation status and flight details for 6E815
+#       RAG: refund policy for cancelled flights
+#   - "Show Delhi to Goa flights and tell me the free baggage allowance"
+#       SQL: matching flights, fares, departure times on DEL->GOI
+#       RAG: free baggage allowance rules
+#   - "Is flight 6E477 on time and can I check in online?"
+#       SQL: on-time/delay status for 6E477
+#       RAG: online check-in policy and window
+#   - "I'm on flight 6E815 which is delayed — can I reschedule for free?"
+#       SQL: delay details for 6E815
+#       RAG: rescheduling / rebooking policy after delays
+
+HYBRID_EXAMPLE_QUERIES = [
+    {
+        "query": "Flight 6E815 is delayed — what compensation am I entitled to?",
+        "sql_part": "Look up status, delay_minutes, and delay_reason for flight 6E815.",
+        "rag_part": "Retrieve delay compensation and passenger entitlement policy.",
+    },
+    {
+        "query": "My flight 6E815 was cancelled. What is the refund policy?",
+        "sql_part": "Confirm cancellation status and flight details for 6E815.",
+        "rag_part": "Retrieve refund policy for cancelled flights.",
+    },
+    {
+        "query": "Show flights from Delhi to Goa and tell me the free baggage allowance.",
+        "sql_part": "Search DEL->GOI flights with fare and schedule fields.",
+        "rag_part": "Retrieve free baggage allowance rules.",
+    },
+    {
+        "query": "Is flight 6E477 on time and can I check in online?",
+        "sql_part": "Fetch on-time/delay status and schedule for 6E477.",
+        "rag_part": "Retrieve online check-in policy and time window.",
+    },
+    {
+        "query": "I'm on flight 6E815 which is delayed — can I reschedule for free?",
+        "sql_part": "Fetch delay details for flight 6E815.",
+        "rag_part": "Retrieve rescheduling/rebooking policy after delays.",
+    },
+]
+
+hybrid_synthesis_system_prompt = (
+    "You are FlightAI, a polite airline customer support agent.\n"
+    "Answer the customer using BOTH sources below:\n"
+    "1. Live flight database results (structured, real-time flight records)\n"
+    "2. Airline knowledge-base excerpts (policies, FAQs, rules)\n\n"
+    "Rules:\n"
+    "- Clearly address every part of the customer's question.\n"
+    "- Use database results for live flight facts only; do not invent flight data.\n"
+    "- Use knowledge-base context for policy/FAQ guidance only; do not invent policies.\n"
+    "- If one source lacks information, say so and answer from the other source.\n"
+    "- Organize the reply with short sections or bullet points when helpful.\n"
+    "- Keep the tone concise, accurate, and customer-friendly."
+)
+
+hybrid_synthesis_prompt = ChatPromptTemplate.from_messages([
+    ("system", hybrid_synthesis_system_prompt),
+    (
+        "human",
+        "Customer question: {user_query}\n\n"
+        "SQL executed: {sql_query}\n"
+        "Database results (JSON): {sql_results}\n\n"
+        "Knowledge-base context:\n{rag_context}\n\n"
+        "Write one unified customer-facing answer:",
+    ),
+])
+
+hybrid_synthesis_chain = hybrid_synthesis_prompt | llm | StrOutputParser()
+
+
+def run_hybrid_pipeline(user_query: str) -> dict[str, str]:
+    """Fetch SQL results and RAG context, then synthesize a single hybrid answer."""
+    generated_sql = clean_sql_output(sql_query_chain.invoke({"question": user_query}))
+    is_valid, reason = validate_sql_query(generated_sql)
+    if not is_valid:
+        sql_results = json.dumps({"error": reason})
+    else:
+        sql_results = run_sql_query_tool.invoke({"sql_query": generated_sql})
+
+    rag_context = retrieve_rag_context(user_query)
+    response = hybrid_synthesis_chain.invoke({
+        "user_query": user_query,
+        "sql_query": generated_sql,
+        "sql_results": sql_results,
+        "rag_context": rag_context,
+    })
+    return {
+        "response": response,
+        "sql_query": generated_sql,
+        "sql_results": sql_results,
+        "rag_context": rag_context,
+    }
+
+
 # --- Fallback ---
 
 fallback_system_prompt = (
@@ -456,19 +593,41 @@ def airline_support_system(user_query: str) -> dict:
     if route == "Need SQL":
         response = run_sql_pipeline(user_query)
         path = "SQL"
+        result = {
+            "query": user_query,
+            "route": route,
+            "path": path,
+            "response": response,
+        }
+    elif route == "Hybrid SQL + RAG":
+        hybrid_result = run_hybrid_pipeline(user_query)
+        result = {
+            "query": user_query,
+            "route": route,
+            "path": "Hybrid",
+            "response": hybrid_result["response"],
+            "sql_query": hybrid_result["sql_query"],
+        }
     elif route == "Non SQL":
         response = rag_chain.invoke(user_query)
         path = "RAG"
+        result = {
+            "query": user_query,
+            "route": route,
+            "path": path,
+            "response": response,
+        }
     else:
         response = fallback_chain.invoke({"query": user_query})
         path = "Fallback"
+        result = {
+            "query": user_query,
+            "route": route,
+            "path": path,
+            "response": response,
+        }
 
-    return {
-        "query": user_query,
-        "route": route,
-        "path": path,
-        "response": response,
-    }
+    return result
 
 
 def get_airline_support_response(user_query: str) -> str:

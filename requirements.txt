@@ -1,7 +1,7 @@
 openai
 langchain
 langchain-core
-langchain-community<0.4.2
+langchain-community>=0.3.0,<0.4.2
 langchain-text-splitters
 langchain-openai
 langchain-huggingface
@@ -16,3 +16,5 @@ fastapi
 uvicorn[standard]
 streamlit
 requests
+ragas>=0.3.9,<0.4.0
+datasets
