@@ -238,52 +238,7 @@ def inject_styles() -> None:
             margin-top: 0.85rem;
         }
 
-        .welcome-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 0.85rem;
-            margin: 0.5rem 0 1rem 0;
-        }
-
-        @media (max-width: 768px) {
-            .welcome-grid { grid-template-columns: 1fr; }
-        }
-
-        .welcome-card {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
-            border-radius: 16px;
-            padding: 1rem 1.05rem;
-            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-        }
-
-        .welcome-card h3 {
-            font-family: "DM Sans", sans-serif;
-            font-size: 0.95rem;
-            margin: 0 0 0.2rem 0;
-            color: #0F172A;
-        }
-
-        .welcome-card p {
-            font-family: "DM Sans", sans-serif;
-            font-size: 0.8rem;
-            color: #64748B;
-            margin: 0 0 0.65rem 0;
-        }
-
-        .path-tag {
-            display: inline-block;
-            padding: 0.15rem 0.5rem;
-            border-radius: 999px;
-            font-family: "DM Sans", sans-serif;
-            font-size: 0.68rem;
-            font-weight: 700;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            margin-bottom: 0.55rem;
-        }
-
-        .sidebar-card {
+        .stat-pill {
             background: #FFFFFF;
             border: 1px solid #E2E8F0;
             border-radius: 14px;
@@ -377,14 +332,6 @@ def inject_styles() -> None:
         </style>
         """,
         unsafe_allow_html=True,
-    )
-
-
-def path_tag_html(path: str) -> str:
-    meta = PATH_META.get(path, PATH_META["Fallback"])
-    return (
-        f'<span class="path-tag" style="color:{meta["color"]}; background:{meta["bg"]}; '
-        f'border:1px solid {meta["border"]};">{meta["label"]}</span>'
     )
 
 
@@ -546,42 +493,28 @@ def render_sidebar() -> None:
 
 
 def render_welcome_samples() -> None:
-    st.markdown(
-        """
-        <p style="font-family:'DM Sans',sans-serif; color:#475569; margin-bottom:0.75rem;">
-            Pick a sample below or use the sidebar to test SQL, RAG, hybrid, and guardrail paths.
-        </p>
-        """,
-        unsafe_allow_html=True,
+    st.caption(
+        "Pick a sample below or use the sidebar to test SQL, RAG, hybrid, and guardrail paths."
     )
 
-    cards_html = ['<div class="welcome-grid">']
-    for group in SAMPLE_QUERY_GROUPS[:3]:
+    card_cols = st.columns(3)
+    for col, group in zip(card_cols, SAMPLE_QUERY_GROUPS[:3]):
         meta = PATH_META.get(group["path"], PATH_META["Fallback"])
         first = group["samples"][0]
-        cards_html.append(
-            f"""
-            <div class="welcome-card" style="border-top: 3px solid {meta['color']};">
-                {path_tag_html(group["path"])}
-                <h3>{group["icon"]} {group["title"]}</h3>
-                <p>{group["subtitle"]}</p>
-                <p style="font-size:0.84rem; color:#334155; margin:0;">Example: {first.query}</p>
-            </div>
-            """
-        )
-    cards_html.append("</div>")
-    st.markdown("".join(cards_html), unsafe_allow_html=True)
+        with col:
+            with st.container(border=True):
+                st.caption(meta["label"])
+                st.markdown(f"### {group['icon']} {group['title']}")
+                st.caption(group["subtitle"])
+                st.markdown(f"**Example:** {first.query}")
 
     st.markdown("#### Quick try")
     quick_cols = st.columns(2)
-    quick_samples = [
-        group["samples"][0]
-        for group in SAMPLE_QUERY_GROUPS[:4]
-    ]
+    quick_samples = [group["samples"][0] for group in SAMPLE_QUERY_GROUPS[:4]]
     for idx, sample in enumerate(quick_samples):
         with quick_cols[idx % 2]:
             if st.button(
-                f"{sample.label}",
+                sample.label,
                 key=f"quick_{sample.path}_{sample.label}",
                 use_container_width=True,
                 help=sample.query,
