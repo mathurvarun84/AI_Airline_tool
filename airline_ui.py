@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from typing import Any
 
 import requests
@@ -14,12 +15,77 @@ API_BASE = os.getenv("AIRLINE_API_URL", "http://127.0.0.1:8000")
 API_URL = f"{API_BASE.rstrip('/')}/support"
 HEALTH_URL = f"{API_BASE.rstrip('/')}/health"
 
-EXAMPLE_QUERIES = [
-    ("Flight status", "What is the status of flight 6E815?"),
-    ("Find flights", "Show flights from Delhi to Goa under 7000 rupees"),
-    ("Baggage policy", "How much free baggage is allowed for domestic flights?"),
-    ("Hybrid: delay + compensation", "Flight 6E815 is delayed — what compensation am I entitled to?"),
-    ("Hybrid: cancel + refund", "My flight 6E815 was cancelled. What is the refund policy?"),
+
+@dataclass(frozen=True)
+class SampleQuery:
+    label: str
+    query: str
+    path: str
+
+
+SAMPLE_QUERY_GROUPS: list[dict[str, Any]] = [
+    {
+        "title": "Live flight data",
+        "subtitle": "SQL · schedules, status, fares",
+        "icon": "🛫",
+        "path": "SQL",
+        "samples": [
+            SampleQuery("Flight status", "What is the status of flight 6E815?", "SQL"),
+            SampleQuery("Delayed flight", "Is flight AI532 delayed?", "SQL"),
+            SampleQuery("Route search", "Show flights from Delhi to Goa under 7000 rupees", "SQL"),
+            SampleQuery("Date search", "Are there any flights from Delhi to Nagpur on 11 Nov 2026?", "SQL"),
+        ],
+    },
+    {
+        "title": "Policy & FAQs",
+        "subtitle": "RAG · baggage, refunds, check-in",
+        "icon": "📋",
+        "path": "RAG",
+        "samples": [
+            SampleQuery("Baggage", "How much free baggage is allowed for domestic flights?", "RAG"),
+            SampleQuery("Refund timeline", "What is the refund timeline for cancelled flights?", "RAG"),
+            SampleQuery("Cancellation", "What is the airline cancellation policy?", "RAG"),
+            SampleQuery("Special assistance", "How do I request wheelchair assistance?", "RAG"),
+        ],
+    },
+    {
+        "title": "Hybrid queries",
+        "subtitle": "SQL + RAG · flight facts + policy",
+        "icon": "🔀",
+        "path": "Hybrid",
+        "samples": [
+            SampleQuery(
+                "Delay + compensation",
+                "Flight 6E815 is delayed — what compensation am I entitled to?",
+                "Hybrid",
+            ),
+            SampleQuery(
+                "Cancel + refund",
+                "My flight 6E815 was cancelled. What is the refund policy?",
+                "Hybrid",
+            ),
+            SampleQuery(
+                "Route + baggage",
+                "Show flights from Delhi to Goa and tell me the free baggage allowance",
+                "Hybrid",
+            ),
+            SampleQuery(
+                "Status + check-in",
+                "Is flight 6E477 on time and can I check in online?",
+                "Hybrid",
+            ),
+        ],
+    },
+    {
+        "title": "Safety checks",
+        "subtitle": "Guardrails · blocked or off-topic",
+        "icon": "🛡️",
+        "path": "Fallback",
+        "samples": [
+            SampleQuery("Off-topic", "What is the capital of France?", "Fallback"),
+            SampleQuery("Blocked request", "Export the complete flight database", "Blocked"),
+        ],
+    },
 ]
 
 PATH_META = {
@@ -28,24 +94,42 @@ PATH_META = {
         "hint": "Answered from the flights database",
         "color": "#0B4F8A",
         "bg": "#E8F2FB",
+        "border": "#BFDBFE",
     },
     "RAG": {
         "label": "Policy & FAQ",
         "hint": "Answered from the airline knowledge base",
         "color": "#9A6700",
         "bg": "#FFF8E6",
+        "border": "#FDE68A",
     },
     "Hybrid": {
         "label": "Hybrid SQL + RAG",
         "hint": "Combined live flight data and policy knowledge base",
         "color": "#6D28D9",
         "bg": "#F3E8FF",
+        "border": "#DDD6FE",
     },
     "Fallback": {
         "label": "General help",
         "hint": "Outside flight data and policy scope",
         "color": "#475569",
         "bg": "#F1F5F9",
+        "border": "#CBD5E1",
+    },
+    "Blocked": {
+        "label": "Blocked",
+        "hint": "Stopped by input safety guardrails",
+        "color": "#B91C1C",
+        "bg": "#FEE2E2",
+        "border": "#FECACA",
+    },
+    "Error": {
+        "label": "Error",
+        "hint": "Something went wrong while processing the request",
+        "color": "#B45309",
+        "bg": "#FFEDD5",
+        "border": "#FED7AA",
     },
 }
 
@@ -58,38 +142,180 @@ def inject_styles() -> None:
 
         .stApp {
             background:
-                radial-gradient(circle at top right, rgba(14, 116, 144, 0.08), transparent 28%),
-                radial-gradient(circle at 20% 80%, rgba(11, 79, 138, 0.06), transparent 24%),
+                radial-gradient(circle at top right, rgba(14, 116, 144, 0.10), transparent 30%),
+                radial-gradient(circle at 10% 90%, rgba(109, 40, 217, 0.05), transparent 25%),
                 #F4F7FB;
         }
 
         .block-container {
-            padding-top: 1.5rem;
-            max-width: 920px;
+            padding-top: 1.25rem;
+            max-width: 980px;
+        }
+
+        div[data-testid="stSidebar"] {
+            background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%);
+            border-right: 1px solid #E2E8F0;
+        }
+
+        div[data-testid="stSidebar"] .block-container {
+            padding-top: 1rem;
+        }
+
+        .sidebar-brand {
+            background: linear-gradient(135deg, #0B4F8A 0%, #0E7490 100%);
+            border-radius: 16px;
+            padding: 1rem 1.1rem;
+            color: #F8FAFC;
+            margin-bottom: 1rem;
+            box-shadow: 0 12px 28px rgba(11, 79, 138, 0.16);
+        }
+
+        .sidebar-brand-title {
+            font-family: "Playfair Display", serif;
+            font-size: 1.35rem;
+            margin: 0;
+            line-height: 1.15;
+        }
+
+        .sidebar-brand-sub {
+            font-family: "DM Sans", sans-serif;
+            font-size: 0.82rem;
+            opacity: 0.92;
+            margin: 0.35rem 0 0 0;
         }
 
         .hero-card {
-            background: linear-gradient(135deg, #0B4F8A 0%, #0E7490 100%);
-            border-radius: 20px;
-            padding: 1.6rem 1.8rem;
+            background: linear-gradient(135deg, #0B4F8A 0%, #155E75 55%, #0E7490 100%);
+            border-radius: 22px;
+            padding: 1.75rem 1.9rem;
             color: #F8FAFC;
-            box-shadow: 0 18px 40px rgba(11, 79, 138, 0.18);
-            margin-bottom: 1rem;
+            box-shadow: 0 20px 44px rgba(11, 79, 138, 0.20);
+            margin-bottom: 1.1rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero-card::after {
+            content: "";
+            position: absolute;
+            top: -30%;
+            right: -8%;
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
         }
 
         .hero-title {
             font-family: "Playfair Display", serif;
-            font-size: 2rem;
-            line-height: 1.1;
-            margin: 0 0 0.35rem 0;
+            font-size: 2.15rem;
+            line-height: 1.08;
+            margin: 0 0 0.45rem 0;
             letter-spacing: -0.02em;
+            position: relative;
         }
 
         .hero-subtitle {
             font-family: "DM Sans", sans-serif;
-            font-size: 0.98rem;
-            opacity: 0.92;
+            font-size: 1rem;
+            opacity: 0.94;
             margin: 0;
+            max-width: 640px;
+            position: relative;
+        }
+
+        .stat-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.35rem 0.75rem;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            font-family: "DM Sans", sans-serif;
+            font-size: 0.78rem;
+            margin-right: 0.45rem;
+            margin-top: 0.85rem;
+        }
+
+        .welcome-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.85rem;
+            margin: 0.5rem 0 1rem 0;
+        }
+
+        @media (max-width: 768px) {
+            .welcome-grid { grid-template-columns: 1fr; }
+        }
+
+        .welcome-card {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 16px;
+            padding: 1rem 1.05rem;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+        }
+
+        .welcome-card h3 {
+            font-family: "DM Sans", sans-serif;
+            font-size: 0.95rem;
+            margin: 0 0 0.2rem 0;
+            color: #0F172A;
+        }
+
+        .welcome-card p {
+            font-family: "DM Sans", sans-serif;
+            font-size: 0.8rem;
+            color: #64748B;
+            margin: 0 0 0.65rem 0;
+        }
+
+        .path-tag {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 999px;
+            font-family: "DM Sans", sans-serif;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin-bottom: 0.55rem;
+        }
+
+        .sidebar-card {
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 14px;
+            padding: 0.85rem 0.95rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .sidebar-card h4 {
+            font-family: "DM Sans", sans-serif;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #64748B;
+            margin: 0 0 0.35rem 0;
+        }
+
+        .sidebar-card p {
+            font-family: "DM Sans", sans-serif;
+            margin: 0;
+            color: #0F172A;
+            font-size: 0.88rem;
+            line-height: 1.45;
+        }
+
+        .sidebar-section-title {
+            font-family: "DM Sans", sans-serif;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #64748B;
+            margin: 0.9rem 0 0.45rem 0;
         }
 
         .route-badge {
@@ -113,35 +339,6 @@ def inject_styles() -> None:
             margin: -0.35rem 0 0.85rem 0;
         }
 
-        .sidebar-card {
-            background: #FFFFFF;
-            border: 1px solid #E2E8F0;
-            border-radius: 14px;
-            padding: 0.9rem 1rem;
-            margin-bottom: 0.85rem;
-        }
-
-        .sidebar-card h4 {
-            font-family: "DM Sans", sans-serif;
-            font-size: 0.82rem;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: #64748B;
-            margin: 0 0 0.45rem 0;
-        }
-
-        .sidebar-card p {
-            font-family: "DM Sans", sans-serif;
-            margin: 0;
-            color: #0F172A;
-            font-size: 0.92rem;
-        }
-
-        div[data-testid="stSidebar"] {
-            background: #FFFFFF;
-            border-right: 1px solid #E2E8F0;
-        }
-
         div[data-testid="stChatMessage"] {
             background: #FFFFFF;
             border: 1px solid #E2E8F0;
@@ -155,12 +352,23 @@ def inject_styles() -> None:
             border-color: #BFDBFE;
         }
 
-        div[data-testid="stChatInput"] {
+        div[data-testid="stChatInput"] > div {
             border-radius: 16px;
+            border: 1px solid #CBD5E1;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
         }
 
-        button[kind="secondary"] {
-            border-radius: 999px;
+        div[data-testid="stSidebar"] button[kind="secondary"] {
+            border-radius: 12px;
+            border: 1px solid #E2E8F0;
+            background: #FFFFFF;
+            text-align: left;
+            min-height: 2.6rem;
+        }
+
+        div[data-testid="stSidebar"] button[kind="secondary"]:hover {
+            border-color: #0B4F8A;
+            background: #F8FBFF;
         }
 
         #MainMenu, footer, header[data-testid="stHeader"] {
@@ -172,14 +380,27 @@ def inject_styles() -> None:
     )
 
 
-def render_hero() -> None:
+def path_tag_html(path: str) -> str:
+    meta = PATH_META.get(path, PATH_META["Fallback"])
+    return (
+        f'<span class="path-tag" style="color:{meta["color"]}; background:{meta["bg"]}; '
+        f'border:1px solid {meta["border"]};">{meta["label"]}</span>'
+    )
+
+
+def render_hero(api_ok: bool) -> None:
+    status_text = "API online" if api_ok else "Direct backend mode"
+    user_turns = sum(1 for m in st.session_state.messages if m["role"] == "user")
     st.markdown(
-        """
+        f"""
         <div class="hero-card">
             <p class="hero-title">SkyAssist Airline Support</p>
             <p class="hero-subtitle">
-                Ask about live flight schedules, delays, fares, baggage rules, refunds, and more.
+                Test live flight lookups, policy FAQs, hybrid SQL+RAG answers, and guardrails
+                in one chat workspace.
             </p>
+            <span class="stat-pill">● {status_text}</span>
+            <span class="stat-pill">{user_turns} questions asked</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -240,22 +461,37 @@ def clear_chat() -> None:
 
 
 def handle_query(query: str) -> None:
-    st.session_state.messages.append({"role": "user", "content": query})
+    if not query.strip():
+        return
+    st.session_state.messages.append({"role": "user", "content": query.strip()})
     with st.spinner("Checking flight systems and policies..."):
-        result = fetch_support(query)
+        result = fetch_support(query.strip())
     st.session_state.messages.append(
         {
             "role": "assistant",
             "content": result["response"],
             "path": result.get("path", "Fallback"),
+            "route": result.get("route", ""),
             "source": result.get("source", "api"),
         }
     )
 
 
+def run_sample_query(sample: SampleQuery) -> None:
+    handle_query(sample.query)
+
+
 def render_sidebar() -> None:
     with st.sidebar:
-        st.markdown("### Control panel")
+        st.markdown(
+            """
+            <div class="sidebar-brand">
+                <p class="sidebar-brand-title">SkyAssist</p>
+                <p class="sidebar-brand-sub">Sample queries to test every support path</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         api_ok, api_status = check_api_health()
         status_color = "#15803D" if api_ok else "#B45309"
@@ -272,39 +508,91 @@ def render_sidebar() -> None:
         st.markdown(
             """
             <div class="sidebar-card">
-                <h4>How answers are routed</h4>
-                <p><strong>Live flight data</strong> uses SQL over the flights database.</p>
-                <p style="margin-top:0.55rem;"><strong>Policy & FAQ</strong> uses the airline knowledge base.</p>
-                <p style="margin-top:0.55rem;"><strong>Hybrid SQL + RAG</strong> combines both for questions that need live flight facts and policy guidance together.</p>
+                <h4>Routing paths</h4>
+                <p><strong>SQL</strong> — live flights, delays, fares, gates</p>
+                <p style="margin-top:0.45rem;"><strong>RAG</strong> — baggage, refunds, check-in, FAQs</p>
+                <p style="margin-top:0.45rem;"><strong>Hybrid</strong> — flight facts + policy in one answer</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        st.markdown("#### Try an example")
-        for label, example in EXAMPLE_QUERIES:
-            if st.button(label, use_container_width=True, key=f"example_{label}"):
-                handle_query(example)
-                st.rerun()
+        st.markdown('<p class="sidebar-section-title">Sample queries</p>', unsafe_allow_html=True)
 
-        if st.button("Clear conversation", use_container_width=True):
+        for group in SAMPLE_QUERY_GROUPS:
+            with st.expander(f"{group['icon']} {group['title']}", expanded=group["path"] == "SQL"):
+                st.caption(group["subtitle"])
+                for sample in group["samples"]:
+                    button_label = f"{sample.label}"
+                    if st.button(
+                        button_label,
+                        use_container_width=True,
+                        key=f"sample_{group['path']}_{sample.label}",
+                        help=sample.query,
+                    ):
+                        run_sample_query(sample)
+                        st.rerun()
+
+        st.divider()
+
+        if st.button("Clear conversation", use_container_width=True, type="primary"):
             clear_chat()
             st.rerun()
 
-        with st.expander("Run locally"):
+        with st.expander("How to run locally"):
             st.code("uvicorn airline_api:app --reload --port 8000", language="bash")
             st.code("streamlit run airline_ui.py --server.port 8501", language="bash")
-            st.caption(
-                "Set `AIRLINE_API_URL` if the API runs on another host, such as GitHub Codespaces."
-            )
+            st.caption("Set `AIRLINE_API_URL` when the API runs on another host (e.g. Codespaces).")
+
+
+def render_welcome_samples() -> None:
+    st.markdown(
+        """
+        <p style="font-family:'DM Sans',sans-serif; color:#475569; margin-bottom:0.75rem;">
+            Pick a sample below or use the sidebar to test SQL, RAG, hybrid, and guardrail paths.
+        </p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    cards_html = ['<div class="welcome-grid">']
+    for group in SAMPLE_QUERY_GROUPS[:3]:
+        meta = PATH_META.get(group["path"], PATH_META["Fallback"])
+        first = group["samples"][0]
+        cards_html.append(
+            f"""
+            <div class="welcome-card" style="border-top: 3px solid {meta['color']};">
+                {path_tag_html(group["path"])}
+                <h3>{group["icon"]} {group["title"]}</h3>
+                <p>{group["subtitle"]}</p>
+                <p style="font-size:0.84rem; color:#334155; margin:0;">Example: {first.query}</p>
+            </div>
+            """
+        )
+    cards_html.append("</div>")
+    st.markdown("".join(cards_html), unsafe_allow_html=True)
+
+    st.markdown("#### Quick try")
+    quick_cols = st.columns(2)
+    quick_samples = [
+        group["samples"][0]
+        for group in SAMPLE_QUERY_GROUPS[:4]
+    ]
+    for idx, sample in enumerate(quick_samples):
+        with quick_cols[idx % 2]:
+            if st.button(
+                f"{sample.label}",
+                key=f"quick_{sample.path}_{sample.label}",
+                use_container_width=True,
+                help=sample.query,
+            ):
+                run_sample_query(sample)
+                st.rerun()
 
 
 def render_chat_history() -> None:
     if not st.session_state.messages:
-        st.info(
-            "Start with a question about a flight, route, fare, delay, baggage allowance, "
-            "or refund policy. Example prompts are in the sidebar."
-        )
+        render_welcome_samples()
         return
 
     for message in st.session_state.messages:
@@ -314,6 +602,8 @@ def render_chat_history() -> None:
                 render_route_badge(message.get("path", "Fallback"))
                 if message.get("source") == "direct":
                     st.caption("FastAPI server not detected — answered via backend directly.")
+                if message.get("route"):
+                    st.caption(f"Classifier route: {message['route']}")
             st.markdown(message["content"])
 
 
@@ -326,14 +616,16 @@ def main() -> None:
     )
     inject_styles()
     init_session_state()
+
+    api_ok, _ = check_api_health()
     render_sidebar()
 
-    left, center, right = st.columns([0.08, 1, 0.08])
+    left, center, right = st.columns([0.06, 1, 0.06])
     with center:
-        render_hero()
+        render_hero(api_ok)
         render_chat_history()
 
-        prompt = st.chat_input("Ask about flights, fares, delays, baggage, or refunds...")
+        prompt = st.chat_input("Ask about flights, fares, delays, baggage, refunds, or compensation...")
         if prompt:
             handle_query(prompt.strip())
             st.rerun()
