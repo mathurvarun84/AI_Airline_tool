@@ -230,15 +230,19 @@ def inject_styles() -> None:
             gap: 0.35rem;
             padding: 0.35rem 0.75rem;
             border-radius: 999px;
-            background: rgba(255, 255, 255, 0.14);
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.18);
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            color: #FFFFFF;
             font-family: "DM Sans", sans-serif;
-            font-size: 0.78rem;
+            font-size: 0.82rem;
+            font-weight: 600;
             margin-right: 0.45rem;
             margin-top: 0.85rem;
+            position: relative;
+            z-index: 1;
         }
 
-        .stat-pill {
+        .sidebar-card {
             background: #FFFFFF;
             border: 1px solid #E2E8F0;
             border-radius: 14px;
@@ -337,6 +341,7 @@ def inject_styles() -> None:
 
 def render_hero(api_ok: bool) -> None:
     status_text = "API online" if api_ok else "Direct backend mode"
+    status_dot = "#86EFAC" if api_ok else "#FCD34D"
     user_turns = sum(1 for m in st.session_state.messages if m["role"] == "user")
     st.markdown(
         f"""
@@ -346,7 +351,9 @@ def render_hero(api_ok: bool) -> None:
                 Test live flight lookups, policy FAQs, hybrid SQL+RAG answers, and guardrails
                 in one chat workspace.
             </p>
-            <span class="stat-pill">● {status_text}</span>
+            <span class="stat-pill">
+                <span style="color:{status_dot}; font-size:0.9rem;">●</span> {status_text}
+            </span>
             <span class="stat-pill">{user_turns} questions asked</span>
         </div>
         """,
